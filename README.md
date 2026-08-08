@@ -15,6 +15,7 @@ Bazable reads your codebase (frontend, backend, or both), builds an API contract
 - **Cloud sync with device‑code auth** – push from backend, sync to frontend, no passwords needed  
 - **Mock server, TypeScript types, and backend scaffolding** – generate an entire Express/Hono API from your contract  
 - **AI‑ready** – JSON output and MCP support planned  
+- Check out the full guide and DOCUMENTATION here https://bazable.mintlify.app/
 
 ---
 
