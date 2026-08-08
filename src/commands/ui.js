@@ -6,6 +6,7 @@ import { readCredentials, writeCredentials } from '../utils/credentials.js';
 import { logger } from '../utils/logger.js';
 import { generateSPA } from '../generators/dashboard.js';
 import { logError as saveError } from '../utils/errorLogger.js';
+import { askAI } from '../utils/ai.js';                       // ← new import
 
 function createApiServer(config) {
   return async (req, res) => {
@@ -23,6 +24,9 @@ function createApiServer(config) {
     }
 
     try {
+      // --------------------------------------------------
+      // Configuration
+      // --------------------------------------------------
       if (url === '/api/config' && method === 'GET') {
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify(config));
@@ -30,15 +34,21 @@ function createApiServer(config) {
       else if (url === '/api/config' && method === 'PUT') {
         const update = JSON.parse(body);
         if (update.endpoints) config.endpoints = { ...config.endpoints, ...update.endpoints };
-        if (update.baseUrl) config.baseUrl = update.baseUrl;
+        if (update.baseUrl !== undefined) config.baseUrl = update.baseUrl;
         if (update.projectName) config.projectName = update.projectName;
+        if (update.aiApiKey !== undefined) config.aiApiKey = update.aiApiKey;
+        if (update.aiBaseUrl !== undefined) config.aiBaseUrl = update.aiBaseUrl;
+        if (update.aiModel !== undefined) config.aiModel = update.aiModel;
         await writeConfig(config);
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ success: true }));
       }
+
+      // --------------------------------------------------
+      // Endpoint CRUD
+      // --------------------------------------------------
       else if (url === '/api/endpoint' && method === 'PUT') {
         const { url: epUrl, data } = JSON.parse(body);
-        // Create or update
         config.endpoints[epUrl] = { ...config.endpoints[epUrl], ...data };
         await writeConfig(config);
         res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -55,6 +65,10 @@ function createApiServer(config) {
           res.writeHead(404); res.end(JSON.stringify({ success: false }));
         }
       }
+
+      // --------------------------------------------------
+      // Authentication
+      // --------------------------------------------------
       else if (url === '/api/login' && method === 'POST') {
         const creds = JSON.parse(body);
         await writeCredentials(creds);
@@ -71,12 +85,118 @@ function createApiServer(config) {
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify(creds || {}));
       }
-      // Proxy route for Postman‑style testing
+
+      // --------------------------------------------------
+      // AI – Test connection & fetch models
+      // --------------------------------------------------
+      else if (url === '/api/ai/test' && method === 'POST') {
+        const { apiKey, baseUrl } = JSON.parse(body);
+        if (!apiKey) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: false, message: 'API key is required.' }));
+          return;
+        }
+        const aiBase = baseUrl || 'https://api.openai.com/v1';
+        try {
+          const testRes = await axios.get(`${aiBase}/models`, {
+            headers: { Authorization: `Bearer ${apiKey}` },
+            timeout: 8000,
+          });
+          if (testRes.status === 200) {
+            const models = (testRes.data.data || []).map(m => m.id).sort();
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ success: true, models }));
+          } else {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ success: false, message: `Unexpected response: ${testRes.status}` }));
+          }
+        } catch (err) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: false, message: err.response?.data?.error?.message || err.message }));
+        }
+      }
+      else if (url === '/api/ai/models' && method === 'POST') {
+        const { apiKey, baseUrl } = JSON.parse(body);
+        if (!apiKey) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: false, models: [] }));
+          return;
+        }
+        const aiBase = baseUrl || 'https://api.openai.com/v1';
+        try {
+          const testRes = await axios.get(`${aiBase}/models`, {
+            headers: { Authorization: `Bearer ${apiKey}` },
+            timeout: 8000,
+          });
+          const models = (testRes.data.data || []).map(m => m.id).sort();
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: true, models }));
+        } catch {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: false, models: [] }));
+        }
+      }
+
+      // --------------------------------------------------
+      // AI – Explain endpoint
+      // --------------------------------------------------
+      else if (url === '/api/ai/explain' && method === 'POST') {
+        const { method: epMethod, url: epUrl } = JSON.parse(body);
+        const contractKey = `${epMethod.toUpperCase()} ${epUrl}`;
+        const entry = config.endpoints[contractKey] || config.endpoints[epUrl];
+        if (!entry) {
+          res.writeHead(404, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: false, message: 'Endpoint not found in contract.' }));
+          return;
+        }
+        const requestSchema = entry.request || {};
+        const responseSchema = entry.response || {};
+
+        const prompt = `Explain this API endpoint to a frontend developer:\nMethod: ${epMethod.toUpperCase()}\nURL: ${epUrl}\nRequest schema: ${JSON.stringify(requestSchema)}\nResponse schema: ${JSON.stringify(responseSchema)}\n\nWhat does it do? What data must be sent? What will be returned? Mention any edge cases.`;
+
+        try {
+          const answer = await askAI(prompt, 'You are a senior backend engineer explaining an API to a junior frontend developer. Keep it concise and actionable.');
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: true, explanation: answer }));
+        } catch (err) {
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: false, message: err.message }));
+        }
+      }
+
+      // --------------------------------------------------
+      // AI – Propose endpoint
+      // --------------------------------------------------
+      else if (url === '/api/ai/propose' && method === 'POST') {
+        const { method: epMethod, url: epUrl, requestText } = JSON.parse(body);
+        const systemCtx = 'You are an API architect. The user wants to update the Bazable API contract. Return ONLY a valid JSON object describing the proposed changes. The JSON must have this structure: { "endpoint": "METHOD URL", "changes": { "request": { ... }, "response": { ... } } }. Do not include markdown formatting, just the raw JSON.';
+        const prompt = `Here is the current contract:\n${JSON.stringify(config, null, 2)}\n\nThe user requests: "${requestText}"\n\nWhat is the exact schema diff needed?`;
+
+        try {
+          const rawAnswer = await askAI(prompt, systemCtx);
+          let proposal;
+          try {
+            proposal = JSON.parse(rawAnswer.trim());
+          } catch (e) {
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ success: true, raw: rawAnswer }));
+            return;
+          }
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: true, proposal }));
+        } catch (err) {
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: false, message: err.message }));
+        }
+      }
+
+      // --------------------------------------------------
+      // Proxy for Postman‑style testing
+      // --------------------------------------------------
       else if (url === '/api/proxy' && method === 'POST') {
         const { method: rawMethod, url: rawUrl, headers: reqHeaders, body: reqBody } = JSON.parse(body);
         let reqMethod = rawMethod || 'GET';
         let reqUrl = rawUrl;
-        // Safety: strip method prefix if present (e.g. "POST https://..." → "https://...")
         const prefixMatch = reqUrl.match(/^(GET|POST|PUT|PATCH|DELETE|OPTIONS|HEAD)\s+(.+)$/i);
         if (prefixMatch) {
           reqMethod = prefixMatch[1].toUpperCase();
@@ -98,7 +218,10 @@ function createApiServer(config) {
           res.end(JSON.stringify({ error: err.message }));
         }
       }
+
+      // --------------------------------------------------
       // Serve the SPA for all other GET requests
+      // --------------------------------------------------
       else if (method === 'GET') {
         res.writeHead(200, { 'Content-Type': 'text/html' });
         res.end(generateSPA(config));

@@ -9,6 +9,8 @@ const configCmd = new Command('config')
   .option('--set-base-url <url>')
   .option('--set-webhook <url>', 'Set a Slack/Discord webhook URL for push notifications')
   .option('--set-ai-key <key>', 'Set an AI API key (OpenAI) for explain/propose features')
+  .option('--set-ai-base <url>', 'Set a custom AI API base URL (e.g. https://api.groq.com/openai/v1)')
+  .option('--set-ai-model <name>', 'Set the AI model name (e.g. llama3-70b-8192, mixtral-8x7b-32768)')
   .action(async (options) => {
     const config = await readConfig();
     if (!config) {
@@ -47,9 +49,16 @@ const configCmd = new Command('config')
       config.webhookUrl = options.setWebhook;
       modified = true;
     }
-
     if (options.setAiKey) {
       config.aiApiKey = options.setAiKey;
+      modified = true;
+    }
+    if (options.setAiBase) {
+      config.aiBaseUrl = options.setAiBase;
+      modified = true;
+    }
+    if (options.setAiModel) {
+      config.aiModel = options.setAiModel;
       modified = true;
     }
 
@@ -64,6 +73,8 @@ const configCmd = new Command('config')
     console.log(`  Base URL     : ${config.baseUrl || '(not set)'}`);
     console.log(`  Webhook URL  : ${config.webhookUrl || '(not set)'}`);
     console.log(`  AI Key       : ${config.aiApiKey ? '***configured***' : '(not set)'}`);
+    console.log(`  AI Base URL  : ${config.aiBaseUrl || '(OpenAI default)'}`);
+    console.log(`  AI Model     : ${config.aiModel || '(OpenAI default)'}`);
     const epCount = Object.keys(config.endpoints || {}).length;
     console.log(`  Endpoints    : ${epCount} registered`);
     if (epCount > 0) {

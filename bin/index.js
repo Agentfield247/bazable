@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-
+import { readFileSync } from 'fs';
 import { Command } from 'commander';
 import chalk from 'chalk';
 import initCommand from '../src/commands/init.js';
@@ -28,6 +28,7 @@ import mcpCommand from '../src/commands/mcp.js';
 import ciCommand from '../src/commands/ci.js';
 import explainCommand from '../src/commands/explain.js';
 import proposeCommand from '../src/commands/propose.js';
+import acceptCommand from '../src/commands/accept.js';
 
 
 // -------------------------------------------------------------------
@@ -35,13 +36,14 @@ import proposeCommand from '../src/commands/propose.js';
 // -------------------------------------------------------------------
 function showBanner() {
   console.log('');
-  console.log(chalk.hex('#FF5A1F').bold('  ▄▄▄▄▄▄▄  ▄▄▄▄▄▄▄ ▄▄▄▄▄▄▄ ▄▄▄▄▄▄▄ ▄▄▄▄▄▄▄ ▄▄▄▄▄▄▄'));
+  console.log(chalk.hex('#FF5A1F').bold('  ▄▄▄▄▄▄▄  ▄▄▄▄▄▄▄  ▄▄▄▄▄▄▄  ▄▄▄▄▄▄▄  ▄▄▄▄▄▄▄  ▄▄▄▄▄▄▄'));
   console.log(chalk.hex('#FF5A1F').bold('  ██▀▀▀▀█▌ ██▀▀▀▀█▌ ██▀▀▀▀█▌ ██▀▀▀▀█▌ ██▀▀▀▀█▌ ██▀▀▀▀█▌'));
   console.log(chalk.hex('#FFB703').bold('  ██    █▌ ██    █▌ ██    █▌ ██    █▌ ██    █▌ ██    █▌'));
   console.log(chalk.hex('#FFB703').bold('  ▀▀▀▀▀▀▀  ▀▀▀▀▀▀▀  ▀▀▀▀▀▀▀  ▀▀▀▀▀▀▀  ▀▀▀▀▀▀▀  ▀▀▀▀▀▀▀'));
   console.log('');
   console.log(chalk.hex('#FF5A1F').bold('  Bazable CLI ') + chalk.hex('#FFB703')('»') + chalk.gray('  Git‑native API contract management'));
-  console.log(chalk.gray('  Version 1.0.0  |  https://bazable.opendeve.com'));
+  const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf-8'));
+  console.log(chalk.gray(`  Version ${pkg.version}  |  https://bazable.opendeve.com`));
   console.log('');
 }
 
@@ -78,6 +80,7 @@ program.addCommand(mcpCommand);
 program.addCommand(ciCommand);
 program.addCommand(explainCommand);
 program.addCommand(proposeCommand);
+program.addCommand(acceptCommand);
 
 
 // Show banner only when no subcommand (except help/version)

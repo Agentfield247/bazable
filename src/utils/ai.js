@@ -10,10 +10,12 @@ export async function askAI(userPrompt, systemContext = '') {
     process.exit(1);
   }
 
-  // Currently only OpenAI‑compatible endpoints supported
-  const apiUrl = 'https://api.openai.com/v1/chat/completions';
+  const baseUrl = config?.aiBaseUrl || 'https://api.openai.com/v1';
+  const model = config?.aiModel || 'gpt-4o-mini';
+  const apiUrl = `${baseUrl}/chat/completions`;
+
   const body = {
-    model: 'gpt-4o-mini',
+    model,
     messages: [
       { role: 'system', content: systemContext || 'You are a helpful API architect and engineering assistant.' },
       { role: 'user', content: userPrompt },

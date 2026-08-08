@@ -103,6 +103,41 @@ export function generateSPA(config) {
         <h2 class="text-lg font-semibold mb-4">Settings</h2>
         <div class="space-y-4">
           <div><label class="block text-xs font-medium mb-1" style="color:var(--text-secondary)">Base URL</label><input type="text" id="settings-base-url" class="w-full rounded-md px-3 py-2 text-sm font-mono" style="background:var(--bg);border:1px solid var(--border);color:var(--text)" value="${config.baseUrl || ''}"></div>
+          <div class="mt-6 pt-6 border-t" style="border-color:var(--border)">
+            <h3 class="text-sm font-semibold mb-2">AI Configuration</h3>
+            <p class="text-xs mb-4" style="color:var(--text-secondary)">
+              Bazable uses AI to explain endpoints and propose contract changes.
+              You need an API key from a supported provider.
+              <br><br>
+              <strong>How to get a key:</strong><br>
+              • <a href="https://console.groq.com" target="_blank" class="text-orange-500 hover:underline">Groq (free)</a> – create an API key, use base URL <code class="text-orange-500">https://api.groq.com/openai/v1</code><br>
+              • <a href="https://platform.openai.com/api-keys" target="_blank" class="text-orange-500 hover:underline">OpenAI</a> – requires a paid plan<br>
+              • Any OpenAI‑compatible provider works.
+            </p>
+            <div class="space-y-4">
+              <div>
+                <label class="block text-xs font-medium mb-1" style="color:var(--text-secondary)">AI API Key</label>
+                <div class="flex gap-2">
+                  <input type="password" id="settings-ai-key" class="flex-1 rounded-md px-3 py-2 text-sm font-mono" style="background:var(--bg);border:1px solid var(--border);color:var(--text)" value="${config.aiApiKey || ''}">
+                  <button onclick="testAiConnection()" class="px-3 py-1.5 text-xs font-medium rounded-md transition-colors" style="background:var(--surface);color:var(--text-secondary);border:1px solid var(--border)">Test</button>
+                </div>
+                <p id="ai-test-result" class="text-xs mt-1 hidden"></p>
+              </div>
+              <div>
+                <label class="block text-xs font-medium mb-1" style="color:var(--text-secondary)">AI Base URL (optional)</label>
+                <input type="text" id="settings-ai-base" class="w-full rounded-md px-3 py-2 text-sm font-mono" style="background:var(--bg);border:1px solid var(--border);color:var(--text)" placeholder="https://api.openai.com/v1" value="${config.aiBaseUrl || ''}">
+              </div>
+              <div>
+                <label class="block text-xs font-medium mb-1" style="color:var(--text-secondary)">AI Model</label>
+                <div class="flex gap-2">
+                  <select id="settings-ai-model" class="flex-1 rounded-md px-3 py-2 text-sm font-mono" style="background:var(--bg);border:1px solid var(--border);color:var(--text)">
+                    <option value="${config.aiModel || ''}">${config.aiModel || 'Select a model...'}</option>
+                  </select>
+                  <button onclick="fetchAiModels()" class="px-3 py-1.5 text-xs font-medium rounded-md transition-colors" style="background:var(--surface);color:var(--text-secondary);border:1px solid var(--border)">Fetch</button>
+                </div>
+              </div>
+            </div>
+          </div>
           <button onclick="saveSettings()" class="px-4 py-2 text-sm font-medium rounded-md text-white" style="background:var(--accent)">Save Settings</button>
         </div>
       </div>
@@ -182,6 +217,31 @@ export function generateSPA(config) {
 
   <div id="toast" class="fixed bottom-6 right-6 px-4 py-2 rounded-md font-medium z-50 hidden" style="background:var(--green);color:#000"></div>
 
+  <!-- AI Explain Modal -->
+  <div id="explain-modal" class="fixed inset-0 bg-black/70 flex items-center justify-center z-50 hidden">
+    <div class="rounded-lg p-6 w-full max-w-2xl" style="background:var(--surface);border:1px solid var(--border)">
+      <div class="flex justify-between items-center mb-4"><h3 class="font-semibold">AI Explanation</h3><button onclick="closeModal('explain-modal')" class="text-zinc-400 hover:text-zinc-200">✕</button></div>
+      <div id="explain-content" class="text-sm" style="color:var(--text-secondary);max-height:60vh;overflow-y:auto;white-space:pre-wrap;">
+        Loading explanation…
+      </div>
+    </div>
+  </div>
+
+  <!-- AI Propose Modal -->
+  <div id="propose-modal" class="fixed inset-0 bg-black/70 flex items-center justify-center z-50 hidden">
+    <div class="rounded-lg p-6 w-full max-w-2xl" style="background:var(--surface);border:1px solid var(--border)">
+      <div class="flex justify-between items-center mb-4"><h3 class="font-semibold">AI Proposal</h3><button onclick="closeModal('propose-modal')" class="text-zinc-400 hover:text-zinc-200">✕</button></div>
+      <div class="space-y-3">
+        <div>
+          <label class="block text-xs font-medium mb-1" style="color:var(--text-secondary)">Describe the change you want:</label>
+          <textarea id="propose-text" rows="3" class="w-full rounded-md px-3 py-2 text-sm font-mono" style="background:var(--bg);border:1px solid var(--border);color:var(--text)" placeholder='e.g. Add phone_number to the request'></textarea>
+        </div>
+        <button onclick="sendProposal()" class="px-4 py-2 text-sm font-medium rounded-md text-white" style="background:var(--accent)">Ask AI</button>
+        <div id="propose-result" class="mt-4 text-sm" style="color:var(--text-secondary);max-height:40vh;overflow-y:auto;white-space:pre-wrap;"></div>
+      </div>
+    </div>
+  </div>
+
   <script>
     // --- THEME ---
     function applyTheme(light) {
@@ -228,6 +288,8 @@ export function generateSPA(config) {
           <td class="px-6 py-3 text-right space-x-2">
             <button onclick="openTestModal('\${url.replace(/'/g,"\\\\'")}','\${method}')" class="text-xs hover:underline" style="color:var(--accent)">Send</button>
             <button onclick="editEndpoint('\${url.replace(/'/g,"\\\\'")}')" class="text-xs hover:underline" style="color:var(--text-secondary)">Edit</button>
+            <button onclick="explainEndpoint('\${url.replace(/'/g,"\\\\'")}','\${method}')" class="text-xs hover:underline" style="color:var(--accent)">Explain</button>
+            <button onclick="proposeEndpoint('\${url.replace(/'/g,"\\\\'")}','\${method}')" class="text-xs hover:underline" style="color:var(--accent)">Propose</button>
             <button onclick="copyTestCmd()" class="text-xs hover:underline" style="color:var(--text-secondary)">Copy Cmd</button>
           </td></tr>\`;
       }
@@ -335,9 +397,30 @@ export function generateSPA(config) {
     }
     async function saveSettings() {
       const baseUrl = document.getElementById('settings-base-url').value.trim();
-      await fetch('/api/config', { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ baseUrl }) });
-      contract.baseUrl = baseUrl;
-      showToast('Settings saved');
+      const aiKey = document.getElementById('settings-ai-key').value.trim();
+      const aiBase = document.getElementById('settings-ai-base').value.trim();
+      const aiModel = document.getElementById('settings-ai-model').value.trim();
+
+      const res = await fetch('/api/config', {
+        method: 'PUT',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({
+          baseUrl,
+          aiApiKey: aiKey,
+          aiBaseUrl: aiBase,
+          aiModel: aiModel,
+        })
+      });
+
+      if (res.ok) {
+        contract.baseUrl = baseUrl;
+        contract.aiApiKey = aiKey;
+        contract.aiBaseUrl = aiBase;
+        contract.aiModel = aiModel;
+        showToast('Settings saved');
+      } else {
+        showToast('Failed to save settings');
+      }
     }
 
     async function refreshContract() {
@@ -386,6 +469,133 @@ export function generateSPA(config) {
       const t = document.getElementById('toast');
       t.textContent = msg; t.classList.remove('hidden');
       setTimeout(() => t.classList.add('hidden'), 2500);
+    }
+
+    async function testAiConnection() {
+      const key = document.getElementById('settings-ai-key').value.trim();
+      const base = document.getElementById('settings-ai-base').value.trim();
+      const resultEl = document.getElementById('ai-test-result');
+      resultEl.classList.remove('hidden');
+      resultEl.textContent = 'Testing…';
+      try {
+        const res = await fetch('/api/ai/test', {
+          method: 'POST',
+          headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({ apiKey: key, baseUrl: base })
+        });
+        const data = await res.json();
+        if (data.success) {
+          resultEl.textContent = 'Connection successful! Models loaded.';
+          resultEl.className = 'text-xs mt-1 text-green-400';
+          // Populate the model dropdown with fetched models
+          const select = document.getElementById('settings-ai-model');
+          select.innerHTML = '';
+          (data.models || []).forEach(m => {
+            const opt = document.createElement('option');
+            opt.value = m;
+            opt.textContent = m;
+            if (m === contract.aiModel) opt.selected = true;
+            select.appendChild(opt);
+          });
+        } else {
+          resultEl.textContent = '❌ ' + data.message;
+          resultEl.className = 'text-xs mt-1 text-red-400';
+        }
+      } catch (e) {
+        resultEl.textContent = '❌ Network error. Check your connection.';
+        resultEl.className = 'text-xs mt-1 text-red-400';
+      }
+    }
+
+    async function fetchAiModels() {
+      const key = document.getElementById('settings-ai-key').value.trim();
+      const base = document.getElementById('settings-ai-base').value.trim();
+      if (!key) { alert('Enter an API key first.'); return; }
+      const select = document.getElementById('settings-ai-model');
+      select.innerHTML = '<option>Loading…</option>';
+      try {
+        const res = await fetch('/api/ai/models', {
+          method: 'POST',
+          headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({ apiKey: key, baseUrl: base })
+        });
+        const data = await res.json();
+        select.innerHTML = '';
+        if (data.success && data.models.length > 0) {
+          data.models.forEach(m => {
+            const opt = document.createElement('option');
+            opt.value = m;
+            opt.textContent = m;
+            if (m === contract.aiModel) opt.selected = true;
+            select.appendChild(opt);
+          });
+        } else {
+          select.innerHTML = '<option>No models found</option>';
+        }
+      } catch (e) {
+        select.innerHTML = '<option>Error loading</option>';
+      }
+    }
+
+    // AI Explain
+    async function explainEndpoint(rawUrl, method) {
+      let url = rawUrl;
+      const match = rawUrl.match(/^(GET|POST|PUT|PATCH|DELETE|OPTIONS|HEAD)\s+(.+)$/i);
+      if (match) { url = match[2]; if (!method || method==='GET') method = match[1].toUpperCase(); }
+      document.getElementById('explain-modal').classList.remove('hidden');
+      document.getElementById('explain-content').textContent = 'Asking AI to explain…';
+      try {
+        const res = await fetch('/api/ai/explain', {
+          method: 'POST',
+          headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({ method, url })
+        });
+        const data = await res.json();
+        if (data.success) {
+          document.getElementById('explain-content').textContent = data.explanation;
+        } else {
+          document.getElementById('explain-content').textContent = 'Error: ' + (data.message || 'Unknown');
+        }
+      } catch (e) {
+        document.getElementById('explain-content').textContent = 'Request failed: ' + e.message;
+      }
+    }
+
+    // AI Propose
+    function proposeEndpoint(rawUrl, method) {
+      let url = rawUrl;
+      const match = rawUrl.match(/^(GET|POST|PUT|PATCH|DELETE|OPTIONS|HEAD)\s+(.+)$/i);
+      if (match) { url = match[2]; if (!method || method==='GET') method = match[1].toUpperCase(); }
+      document.getElementById('propose-modal').classList.remove('hidden');
+      // Store context for when the user clicks "Ask AI"
+      window._proposeContext = { method, url };
+    }
+
+    async function sendProposal() {
+      const requestText = document.getElementById('propose-text').value.trim();
+      if (!requestText) { alert('Describe what you want.'); return; }
+      const ctx = window._proposeContext;
+      if (!ctx) return;
+      document.getElementById('propose-result').textContent = 'Asking AI…';
+      try {
+        const res = await fetch('/api/ai/propose', {
+          method: 'POST',
+          headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({ method: ctx.method, url: ctx.url, requestText })
+        });
+        const data = await res.json();
+        if (data.success) {
+          if (data.proposal) {
+            document.getElementById('propose-result').textContent = JSON.stringify(data.proposal, null, 2);
+          } else {
+            document.getElementById('propose-result').textContent = data.raw || 'No proposal generated.';
+          }
+        } else {
+          document.getElementById('propose-result').textContent = 'Error: ' + (data.message || 'Unknown');
+        }
+      } catch (e) {
+        document.getElementById('propose-result').textContent = 'Request failed: ' + e.message;
+      }
     }
 
     function init() { renderStats(); renderEndpoints(); checkLoginStatus(); }
