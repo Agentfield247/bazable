@@ -1,0 +1,37 @@
+{
+  "name": "bazable-api",
+  "version": "1.0.4",
+  "description": "Git-native API contract management",
+  "type": "module",
+  "bin": {
+    "bazable": "bin/index.js"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "postinstall": "node -e \"console.log('\\n\\x1b[38;2;255;90;31m\\x1b[1m⚡ Bazable CLI installed!\\x1b[0m\\nRun \\x1b[38;2;255;183;3mbazable\\x1b[0m to get started.\\n')\""
+  },
+  "keywords": [
+    "api",
+    "contract",
+    "cli",
+    "schema",
+    "git"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "@babel/generator": "^7.24.0",
+    "@babel/parser": "^7.24.0",
+    "@babel/traverse": "^7.24.0",
+    "@faker-js/faker": "^10.5.0",
+    "@supabase/supabase-js": "^2.111.0",
+    "axios": "^1.6.7",
+    "chalk": "^5.3.0",
+    "commander": "^12.0.0",
+    "cors": "^2.8.6",
+    "express": "^5.2.1",
+    "fast-glob": "^3.3.2",
+    "inquirer": "^14.0.2",
+    "js-yaml": "^5.2.2",
+    "ora": "^8.2.0"
+  }
+}

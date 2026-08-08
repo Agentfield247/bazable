@@ -1,0 +1,10 @@
+{
+  "version": "1.0",
+  "projectName": "bazable",
+  "endpoints": {
+    "https://jsonplaceholder.typicode.com/posts/1": {
+      "schema_status": "working",
+      "last_checked": "2026-07-23T18:33:21.480Z"
+    }
+  }
+}
