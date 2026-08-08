@@ -7,6 +7,8 @@ const configCmd = new Command('config')
   .option('--get <key>')
   .option('--set-project-name <name>')
   .option('--set-base-url <url>')
+  .option('--set-webhook <url>', 'Set a Slack/Discord webhook URL for push notifications')
+  .option('--set-ai-key <key>', 'Set an AI API key (OpenAI) for explain/propose features')
   .action(async (options) => {
     const config = await readConfig();
     if (!config) {
@@ -41,6 +43,15 @@ const configCmd = new Command('config')
       config.baseUrl = options.setBaseUrl;
       modified = true;
     }
+    if (options.setWebhook) {
+      config.webhookUrl = options.setWebhook;
+      modified = true;
+    }
+
+    if (options.setAiKey) {
+      config.aiApiKey = options.setAiKey;
+      modified = true;
+    }
 
     if (modified) {
       await writeConfig(config);
@@ -51,6 +62,8 @@ const configCmd = new Command('config')
     console.log(`  Project Name : ${config.projectName || '(not set)'}`);
     console.log(`  Version      : ${config.version || '1.0'}`);
     console.log(`  Base URL     : ${config.baseUrl || '(not set)'}`);
+    console.log(`  Webhook URL  : ${config.webhookUrl || '(not set)'}`);
+    console.log(`  AI Key       : ${config.aiApiKey ? '***configured***' : '(not set)'}`);
     const epCount = Object.keys(config.endpoints || {}).length;
     console.log(`  Endpoints    : ${epCount} registered`);
     if (epCount > 0) {

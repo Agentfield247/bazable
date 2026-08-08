@@ -96,6 +96,16 @@ const push = new Command('push')
         { headers: authHeaders }
       );
       spinner.succeed(chalk.hex('#10B981')(`Contract pushed successfully to cloud [Version ${data.version}]`));
+      // Webhook notification
+      if (config.webhookUrl) {
+        try {
+          await axios.post(config.webhookUrl, {
+            text: `🚀 Bazable: The API contract for ${config.projectName || 'a project'} has been updated to Version ${data.version} by a backend developer. Run \`bazable sync\` to pull the latest changes.`,
+          }, { timeout: 5000 });
+        } catch (webhookErr) {
+          // Silently fail – webhook is non‑critical
+        }
+      }
     } catch (err) {
       spinner.fail('Push failed');
       logger.error(err.response?.data?.message || err.message);

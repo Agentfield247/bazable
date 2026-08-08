@@ -25,6 +25,10 @@ import syncCommand from '../src/commands/sync.js';
 import watchCommand from '../src/commands/watch.js';
 import pushCommand from '../src/commands/push.js';
 import mcpCommand from '../src/commands/mcp.js';
+import ciCommand from '../src/commands/ci.js';
+import explainCommand from '../src/commands/explain.js';
+import proposeCommand from '../src/commands/propose.js';
+
 
 // -------------------------------------------------------------------
 // Branded banner
@@ -71,6 +75,10 @@ program.addCommand(syncCommand);
 program.addCommand(watchCommand);
 program.addCommand(pushCommand);
 program.addCommand(mcpCommand);
+program.addCommand(ciCommand);
+program.addCommand(explainCommand);
+program.addCommand(proposeCommand);
+
 
 // Show banner only when no subcommand (except help/version)
 const args = process.argv.slice(2).filter(a => a !== '--help' && a !== '-h' && a !== '--version' && a !== '-V');

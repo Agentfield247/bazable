@@ -15,7 +15,9 @@ async function resolveApiBase() {
 
 const sync = new Command('sync')
   .description('Pull the latest contract from Bazable Cloud and overwrite local copy')
-  .action(async () => {
+  .option('--version <v>', 'Fetch a specific contract version instead of the latest')
+  .option('-t, --token <token>', 'Use a specific access token (headless mode, no browser)')
+  .action(async (options) => {
     await validateProjectContext();
 
     const config = await readConfig();
@@ -24,8 +26,8 @@ const sync = new Command('sync')
       process.exit(1);
     }
 
-    // Authenticate if needed
-    let token = await getAuthToken();
+    // Authenticate – use provided token, otherwise stored token or device flow
+    let token = options.token || (await getAuthToken());
     if (!token) {
       logger.info('Authentication required. Starting device code flow...');
       try {
@@ -35,7 +37,6 @@ const sync = new Command('sync')
         token = data.access_token;
         logger.success('Authenticated.');
       } catch (err) {
-        // Friendly messages for common failures
         if (
           err.code === 'ECONNRESET' ||
           err.code === 'ETIMEDOUT' ||
@@ -52,19 +53,23 @@ const sync = new Command('sync')
       }
     }
 
-    const spinner = ora('Fetching latest contract...').start();
+    const spinner = ora('Fetching contract...').start();
     try {
       const base = await resolveApiBase();
-      const { data } = await axios.get(
-        `${base}/projects/${config.cloudProjectId}/contracts/latest`,
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
+      let endpoint = `${base}/projects/${config.cloudProjectId}/contracts/latest`;
+      if (options.version) {
+        endpoint = `${base}/projects/${config.cloudProjectId}/contracts/${options.version}`;
+      }
+
+      const { data } = await axios.get(endpoint, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
       if (!data || !data.schema_json) {
         spinner.warn('No contract found on cloud.');
         return;
       }
 
-      // Overwrite local config
       const remote = data.schema_json;
       config.version = remote.version;
       config.projectName = remote.projectName;
@@ -73,10 +78,15 @@ const sync = new Command('sync')
       config.endpoints = remote.endpoints;
       await writeConfig(config);
 
-      spinner.succeed(chalk.hex('#10B981')('Local contract synchronized with Bazable Cloud.'));
+      const versionMsg = options.version ? `Version ${options.version}` : 'latest';
+      spinner.succeed(chalk.hex('#10B981')(`Rolled back to Contract ${versionMsg}.`));
     } catch (err) {
       spinner.fail('Sync failed');
-      logger.error(err.response?.data?.message || err.message);
+      if (err.response?.status === 404) {
+        logger.error(`Contract version ${options.version || 'latest'} not found.`);
+      } else {
+        logger.error(err.response?.data?.message || err.message);
+      }
       process.exit(1);
     }
   });
