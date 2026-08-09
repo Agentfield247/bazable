@@ -1,11 +1,29 @@
 import { Command } from 'commander';
 import { createInterface } from 'readline';
+import { spawn } from 'child_process';
 import { readConfig } from '../utils/config.js';
+
+// Helper: run a bazable CLI command and return stdout as string
+function runBazable(args) {
+  return new Promise((resolve, reject) => {
+    const child = spawn('bazable', args, { cwd: process.cwd(), shell: true });
+    let stdout = '';
+    let stderr = '';
+    child.stdout.on('data', (data) => (stdout += data.toString()));
+    child.stderr.on('data', (data) => (stderr += data.toString()));
+    child.on('close', (code) => {
+      if (code === 0) resolve(stdout.trim());
+      else reject(new Error(stderr || `Exit code ${code}`));
+    });
+    child.on('error', reject);
+  });
+}
 
 // Available tools
 const TOOLS = {
   listEndpoints: {
     description: 'List all endpoints in the contract with their methods and statuses.',
+    inputSchema: { type: 'object', properties: {} },
     handler: async () => {
       const config = await readConfig();
       if (!config) return { error: 'No contract found.' };
@@ -19,6 +37,14 @@ const TOOLS = {
   },
   getEndpoint: {
     description: 'Get the request and response schemas for a specific endpoint.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        method: { type: 'string', description: 'HTTP method (GET, POST, etc.)' },
+        url: { type: 'string', description: 'Full endpoint URL' },
+      },
+      required: ['method', 'url'],
+    },
     handler: async (args) => {
       const config = await readConfig();
       const key = `${args.method.toUpperCase()} ${args.url}`;
@@ -27,14 +53,35 @@ const TOOLS = {
       return {
         request: entry.request || {},
         response: entry.response || {},
+        method: entry.method || args.method.toUpperCase(),
+        url: args.url,
       };
     },
   },
   inspect: {
-    description: 'Run a contract inspection and return violations. (Simplified – returns a placeholder)',
+    description: 'Run a full contract inspection and return violations in JSON format.',
+    inputSchema: { type: 'object', properties: {} },
     handler: async () => {
-      // In production, you'd import and call the real inspect logic
-      return { message: 'Full inspection not yet available via MCP. Use `bazable inspect` CLI command.' };
+      try {
+        const output = await runBazable(['inspect', '--json', '--ci']);
+        const result = JSON.parse(output);
+        return result;
+      } catch (err) {
+        return { error: err.message };
+      }
+    },
+  },
+  test: {
+    description: 'Run mock tests on all endpoints and return results.',
+    inputSchema: { type: 'object', properties: {} },
+    handler: async () => {
+      try {
+        const output = await runBazable(['test', '--json', '--mock', '--all']);
+        const result = JSON.parse(output);
+        return result;
+      } catch (err) {
+        return { error: err.message };
+      }
     },
   },
 };
@@ -53,7 +100,7 @@ function startMcpServer() {
             tools: Object.entries(TOOLS).map(([name, tool]) => ({
               name,
               description: tool.description,
-              inputSchema: { type: 'object', properties: {} },
+              inputSchema: tool.inputSchema,
             })),
           },
         };
