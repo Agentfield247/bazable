@@ -56,7 +56,7 @@ const program = new Command();
 program
   .name('bazable')
   .description('Git-native API contract management')
-  .version(pkg.version);
+  .version('1');
 
 program.addCommand(initCommand);
 program.addCommand(addCommand);
