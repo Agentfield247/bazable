@@ -1,10 +1,16 @@
 import { Command } from 'commander';
-import { createConnection, TextDocuments, ProposedFeatures, TextDocumentSyncKind, DiagnosticSeverity } from 'vscode-languageserver/node.js';
+import {
+  createConnection,
+  TextDocuments,
+  ProposedFeatures,
+  TextDocumentSyncKind,
+  DiagnosticSeverity,
+  DidChangeConfigurationNotification,
+} from 'vscode-languageserver/node';
 import { TextDocument } from 'vscode-languageserver-textdocument';
 import { readConfig } from '../utils/config.js';
 import { extractApiUrlsFromFile, inspectFileAdvanced } from '../parsers/ast.js';
 import { resolveUrl } from '../utils/url.js';
-import { DidChangeConfigurationNotification } from 'vscode-languageserver/node.js';
 
 const lsp = new Command('lsp')
   .description('Start the Bazable Language Server Protocol engine')
