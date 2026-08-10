@@ -47,7 +47,7 @@ function showBanner() {
   console.log(chalk.hex('#FFB703').bold('  ▀▀▀▀▀▀▀  ▀▀▀▀▀▀▀  ▀▀▀▀▀▀▀  ▀▀▀▀▀▀▀  ▀▀▀▀▀▀▀  ▀▀▀▀▀▀▀'));
   console.log('');
   console.log(chalk.hex('#FF5A1F').bold('  Bazable CLI ') + chalk.hex('#FFB703')('»') + chalk.gray('  Git‑native API contract management'));
-  console.log(chalk.gray(`  Version ${pkg.version}  |  https://bazable.opendeve.com`));
+  console.log(chalk.gray(`  Version ${pkg.version}  |  https://bazable.mintlify.app`));
   console.log('');
 }
 
