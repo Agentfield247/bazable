@@ -316,11 +316,35 @@ export function generateSPA(config) {
       const body = document.getElementById('test-body').value.trim();
       const resBox = document.getElementById('test-response');
       resBox.textContent = 'Sending...';
+
       try {
-        const res = await fetch('/api/proxy', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ method, url, headers, body }) });
-        const text = await res.text();
-        try { resBox.textContent = JSON.stringify(JSON.parse(text), null, 2); } catch { resBox.textContent = text; }
-      } catch(e) { resBox.textContent = 'Request failed: ' + e.message; }
+        const res = await fetch('/api/proxy', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ method, url, headers, body })
+        });
+        const proxyResult = await res.json();
+
+        if (proxyResult.error) {
+          resBox.textContent = 'Proxy error: ' + proxyResult.error;
+        } else {
+          const status = proxyResult.status;
+          const data = proxyResult.data;
+          let display = \`Status: \${status}\\n\\n\`;
+          if (typeof data === 'string') {
+            try {
+              display += JSON.stringify(JSON.parse(data), null, 2);
+            } catch {
+              display += data;
+            }
+          } else {
+            display += JSON.stringify(data, null, 2);
+          }
+          resBox.textContent = display;
+        }
+      } catch(e) {
+        resBox.textContent = 'Request failed: ' + e.message;
+      }
     }
 
     function editEndpoint(url) {
@@ -446,11 +470,41 @@ export function generateSPA(config) {
       let hdrs = {};
       try { hdrs = JSON.parse(headers); } catch(e) { hdrs = {"Content-Type":"application/json"}; }
       try {
-        const res = await fetch('/api/proxy', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ method, url, headers: hdrs, body }) });
-        const text = await res.text();
-        try { const json = JSON.parse(text); resBox.textContent = JSON.stringify(json, null, 2); testerResponseData = { method, url, headers: hdrs, body, response: json }; document.getElementById('add-from-tester-btn').classList.remove('hidden'); }
-        catch { resBox.textContent = text; document.getElementById('add-from-tester-btn').classList.add('hidden'); }
-      } catch(e) { resBox.textContent = 'Request failed: ' + e.message; document.getElementById('add-from-tester-btn').classList.add('hidden'); }
+        const res = await fetch('/api/proxy', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ method, url, headers: hdrs, body })
+        });
+        const proxyResult = await res.json();
+
+        if (proxyResult.error) {
+          resBox.textContent = 'Proxy error: ' + proxyResult.error;
+          document.getElementById('add-from-tester-btn').classList.add('hidden');
+        } else {
+          const status = proxyResult.status;
+          const data = proxyResult.data;
+          let display = \`Status: \${status}\\n\\n\`;
+          if (typeof data === 'string') {
+            try {
+              const json = JSON.parse(data);
+              display += JSON.stringify(json, null, 2);
+              testerResponseData = { method, url, headers: hdrs, body, response: json };
+              document.getElementById('add-from-tester-btn').classList.remove('hidden');
+            } catch {
+              display += data;
+              document.getElementById('add-from-tester-btn').classList.add('hidden');
+            }
+          } else {
+            display += JSON.stringify(data, null, 2);
+            testerResponseData = { method, url, headers: hdrs, body, response: data };
+            document.getElementById('add-from-tester-btn').classList.remove('hidden');
+          }
+          resBox.textContent = display;
+        }
+      } catch(e) {
+        resBox.textContent = 'Request failed: ' + e.message;
+        document.getElementById('add-from-tester-btn').classList.add('hidden');
+      }
     }
 
     async function addFromTester() {
@@ -487,7 +541,6 @@ export function generateSPA(config) {
         if (data.success) {
           resultEl.textContent = 'Connection successful! Models loaded.';
           resultEl.className = 'text-xs mt-1 text-green-400';
-          // Populate the model dropdown with fetched models
           const select = document.getElementById('settings-ai-model');
           select.innerHTML = '';
           (data.models || []).forEach(m => {
@@ -567,7 +620,6 @@ export function generateSPA(config) {
       const match = rawUrl.match(/^(GET|POST|PUT|PATCH|DELETE|OPTIONS|HEAD)\s+(.+)$/i);
       if (match) { url = match[2]; if (!method || method==='GET') method = match[1].toUpperCase(); }
       document.getElementById('propose-modal').classList.remove('hidden');
-      // Store context for when the user clicks "Ask AI"
       window._proposeContext = { method, url };
     }
 

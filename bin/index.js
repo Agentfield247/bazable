@@ -29,6 +29,8 @@ import ciCommand from '../src/commands/ci.js';
 import explainCommand from '../src/commands/explain.js';
 import proposeCommand from '../src/commands/propose.js';
 import acceptCommand from '../src/commands/accept.js';
+import curlCommand from '../src/commands/curl.js';
+import lspCommand from '../src/commands/lsp.js';
 
 
 // -------------------------------------------------------------------
@@ -81,6 +83,8 @@ program.addCommand(ciCommand);
 program.addCommand(explainCommand);
 program.addCommand(proposeCommand);
 program.addCommand(acceptCommand);
+program.addCommand(curlCommand);
+program.addCommand(lspCommand);
 
 
 // Show banner only when no subcommand (except help/version)

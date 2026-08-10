@@ -10,6 +10,7 @@ import { generateHono } from '../generators/hono.js';
 import { generateHtmlForm } from '../generators/html-form.js';
 import { askAI } from '../utils/ai.js';
 import { generateContextFiles } from '../generators/context.js';
+import { generatePrismaModel, generateSupabaseSQL } from '../generators/db.js';
 
 const FRAMEWORKS = {
   express: { name: 'Express.js', generator: generateExpress, extension: '.js' },
@@ -241,6 +242,59 @@ generate
 
     const files = await generateContextFiles(outDir);
     files.forEach(f => logger.success(`Generated ${f}`));
+  });
+
+// --------------------------------------------------
+// Subcommand: db (ORM schema generator)
+// --------------------------------------------------
+generate
+  .command('db')
+  .description('Generate database schema from an endpoint')
+  .argument('<method>', 'HTTP method')
+  .argument('<url>', 'Endpoint URL')
+  .option('-o, --output <dir>', 'Output directory', './generated-db')
+  .option('--orm <type>', 'ORM framework (prisma, supabase)', 'prisma')
+  .action(async (method, url, options) => {
+    await validateProjectContext();
+
+    const config = await readConfig();
+    if (!config) {
+      logger.error('Project not initialized.');
+      process.exit(1);
+    }
+
+    const contractKey = `${method.toUpperCase()} ${url}`;
+    const entry = config.endpoints[contractKey] || config.endpoints[url];
+    if (!entry) {
+      logger.error('Endpoint not found in contract.');
+      process.exit(1);
+    }
+
+    const allFields = { ...(entry.request || {}), ...(entry.response || {}) };
+    if (Object.keys(allFields).length === 0) {
+      logger.error('No request or response schema found.');
+      process.exit(1);
+    }
+
+    const modelName = url.replace(/^https?:\/\//, '').replace(/[^a-zA-Z0-9]/g, '_').replace(/_+/g, '_').replace(/^_|_$/g, '');
+    const outDir = path.resolve(process.cwd(), options.output);
+    await fs.mkdir(outDir, { recursive: true });
+
+    let code, ext;
+    if (options.orm === 'prisma') {
+      code = generatePrismaModel(modelName, allFields);
+      ext = '.prisma';
+    } else if (options.orm === 'supabase') {
+      code = generateSupabaseSQL(modelName, allFields);
+      ext = '.sql';
+    } else {
+      logger.error(`Unknown ORM '${options.orm}'. Use prisma or supabase.`);
+      process.exit(1);
+    }
+
+    const filePath = path.join(outDir, `${modelName}${ext}`);
+    await fs.writeFile(filePath, code, 'utf-8');
+    logger.success(`Generated database model: ${filePath}`);
   });
 
 export default generate;

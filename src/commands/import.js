@@ -7,13 +7,12 @@ import { load as yamlLoad } from 'js-yaml';
 import { readConfig, writeConfig, getPackageProjectName, validateProjectContext } from '../utils/config.js';
 import { logger } from '../utils/logger.js';
 import { resolveUrl } from '../utils/url.js';
+import { parseCSV, inferSchemaFromData } from '../utils/csv.js';   // NEW import
 
 // -------------------------------------------------------------------
 // Helper: detect if content is JSON or YAML
 function parseContent(raw) {
-  // Try JSON first
   try { return { format: 'json', data: JSON.parse(raw) }; } catch {}
-  // Try YAML
   try { return { format: 'yaml', data: yamlLoad(raw) }; } catch {}
   throw new Error('Unrecognised format – not valid JSON or YAML.');
 }
@@ -22,11 +21,8 @@ function parseContent(raw) {
 // Helper: determine spec type
 function getSpecType(data) {
   if (!data) return 'unknown';
-  // Postman collection v2/v2.1
   if (data.info && data.info.schema && data.info.schema.includes('postman')) return 'postman';
-  // OpenAPI v3
   if (data.openapi) return 'openapi3';
-  // Swagger v2
   if (data.swagger === '2.0') return 'swagger2';
   return 'unknown';
 }
@@ -39,7 +35,7 @@ function extractOpenApiEndpoints(specData, baseUrl) {
   for (const [routePath, methods] of Object.entries(paths)) {
     for (const [method, operation] of Object.entries(methods)) {
       if (!['get','post','put','patch','delete','options','head'].includes(method)) continue;
-      const fullUrl = resolveUrl(routePath, baseUrl); // absolute
+      const fullUrl = resolveUrl(routePath, baseUrl);
       const endpointKey = `${method.toUpperCase()} ${fullUrl}`;
       const requestSchema = extractOpenApiRequestSchema(operation);
       const responseSchema = extractOpenApiResponseSchema(operation);
@@ -94,7 +90,7 @@ function extractSchemaProperties(schema) {
       } else if (propSchema.type === 'object') {
         props[key] = 'object';
       } else if (propSchema.type) {
-        props[key] = propSchema.type; // string, number, boolean, etc.
+        props[key] = propSchema.type;
       } else {
         props[key] = 'any';
       }
@@ -114,11 +110,9 @@ function extractPostmanEndpoints(collection, baseUrl = '') {
         let url = '';
         if (typeof item.request.url === 'string') url = item.request.url;
         else if (item.request.url && item.request.url.raw) url = item.request.url.raw;
-        // Resolve against parent if relative
         if (!url.startsWith('http') && baseUrl) url = resolveUrl(url, baseUrl);
         else if (!url.startsWith('http') && parentUrl) url = resolveUrl(url, parentUrl);
         const endpointKey = `${method} ${url}`;
-        // Try to parse request body (raw JSON)
         let requestSchema;
         if (item.request.body && item.request.body.raw) {
           try {
@@ -134,7 +128,7 @@ function extractPostmanEndpoints(collection, baseUrl = '') {
           method,
           url,
           request: requestSchema,
-          response: undefined, // Postman rarely includes response schemas
+          response: undefined,
           source: 'imported',
         });
       }
@@ -150,21 +144,53 @@ function extractPostmanEndpoints(collection, baseUrl = '') {
 // -------------------------------------------------------------------
 const importCommand = new Command('import')
   .alias('imp')
-  .description('Import API specifications (OpenAPI/Swagger, Postman)')
+  .description('Import API specifications (OpenAPI/Swagger, Postman, CSV)')
   .argument('[source]', 'URL or file path to the spec')
   .option('-b, --base-url <url>', 'Base URL to resolve relative paths')
+  .option('--csv <filePath>', 'Import from a CSV file')
+  .option('--name <endpointName>', 'Name of the endpoint when importing CSV')
   .action(async (source, options) => {
     await validateProjectContext();
 
     let config = await readConfig();
     if (!config) {
-      // If no config, create one silently
       const projectName = await getPackageProjectName();
       config = { version: '1.0', projectName, endpoints: {} };
       await writeConfig(config);
     }
 
-    // Interactive prompt if no source
+    // ── CSV import (new) ──
+    if (options.csv) {
+      if (!options.name) {
+        logger.error('--name is required when importing from CSV.');
+        process.exit(1);
+      }
+      logger.startSpinner('Parsing CSV...');
+      try {
+        const rows = await parseCSV(options.csv);
+        if (rows.length === 0) {
+          logger.fail('CSV file contains no data.');
+          process.exit(1);
+        }
+        const schema = inferSchemaFromData(rows);
+        const endpointKey = `GET /api/${options.name}`;
+        config.endpoints[endpointKey] = {
+          method: 'GET',
+          response: schema,
+          schema_status: 'imported',
+          csv_source: options.csv,
+        };
+        await writeConfig(config);
+        logger.succeed(`Successfully imported ${options.name} from CSV.`);
+        logger.info(`Endpoint GET /api/${options.name} added to contract.`);
+      } catch (err) {
+        logger.fail('CSV import failed: ' + err.message);
+        process.exit(1);
+      }
+      return;   // stop after CSV import
+    }
+
+    // ── Interactive prompt if no source ──
     if (!source) {
       const answers = await inquirer.prompt([
         {
@@ -177,17 +203,15 @@ const importCommand = new Command('import')
       source = answers.source.trim();
     }
 
-    // Fetch content
+    // ── Load spec (existing logic) ──
     let rawContent;
     logger.startSpinner('Loading specification...');
     try {
       if (source.startsWith('http://') || source.startsWith('https://')) {
         const response = await axios.get(source, { timeout: 15000 });
         rawContent = response.data;
-        // If it's a string, assume it's the raw spec content
         if (typeof rawContent === 'object') rawContent = JSON.stringify(rawContent);
       } else {
-        // Local file path
         const filePath = path.resolve(process.cwd(), source);
         rawContent = await fs.readFile(filePath, 'utf-8');
       }
@@ -198,7 +222,6 @@ const importCommand = new Command('import')
     }
     logger.succeed('Specification loaded.');
 
-    // Parse content (JSON/YAML)
     logger.startSpinner('Parsing specification...');
     let specData;
     try {
@@ -211,27 +234,21 @@ const importCommand = new Command('import')
     }
     logger.succeed('Specification parsed.');
 
-    // Detect type
     const specType = getSpecType(specData);
     if (specType === 'unknown') {
       logger.error('Unknown specification format. Supported: OpenAPI v2/v3, Postman collections.');
       process.exit(1);
     }
 
-    // Determine base URL
     let baseUrl = options.baseUrl;
     if (!baseUrl) {
-      // Try to extract from spec
       if (specType === 'openapi3' && specData.servers && specData.servers[0]) {
         baseUrl = specData.servers[0].url;
       } else if (specType === 'swagger2' && specData.host) {
         baseUrl = `https://${specData.host}${specData.basePath || ''}`;
-      } else if (specType === 'postman') {
-        // Leave baseUrl empty; relative URLs will be resolved using the first request's URL
       }
     }
 
-    // Extract endpoints
     let newEndpoints = [];
     if (specType === 'openapi3' || specType === 'swagger2') {
       newEndpoints = extractOpenApiEndpoints(specData, baseUrl);
@@ -244,7 +261,6 @@ const importCommand = new Command('import')
       return;
     }
 
-    // Merge into config (don't overwrite existing)
     let added = 0;
     for (const ep of newEndpoints) {
       if (!config.endpoints[ep.key]) {
@@ -261,11 +277,8 @@ const importCommand = new Command('import')
     await writeConfig(config);
     logger.success(`Import complete. ${added} new endpoint(s) added.`);
 
-    // Summary dashboard
     const methodCounts = {};
-    newEndpoints.forEach(ep => {
-      methodCounts[ep.method] = (methodCounts[ep.method] || 0) + 1;
-    });
+    newEndpoints.forEach(ep => { methodCounts[ep.method] = (methodCounts[ep.method] || 0) + 1; });
 
     console.log('\n' + logger.bold('Import Summary'));
     console.log('──────────────────────────────');

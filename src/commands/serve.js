@@ -4,6 +4,7 @@ import cors from 'cors';
 import { faker } from '@faker-js/faker';
 import { readConfig, validateProjectContext } from '../utils/config.js';
 import { logger } from '../utils/logger.js';
+import { parseCSV } from '../utils/csv.js';   // NEW import
 
 // -------------------------------------------------------------------
 // Smart data generator using @faker-js/faker
@@ -71,6 +72,7 @@ const serve = new Command('serve')
   .description('Start a realistic mock server from the contract')
   .option('-p, --port <port>', 'Port to listen on', '4000')
   .option('-d, --delay <ms>', 'Simulate network delay in milliseconds', '0')
+  .option('--seed <csvFilePath>', 'Seed mock server with data from a CSV file')   // NEW option
   .action(async (options) => {
     await validateProjectContext();
 
@@ -106,6 +108,22 @@ const serve = new Command('serve')
       });
     }
 
+    // ── Seed CSV data if provided ──
+    let csvData = null;
+    let seedRoute = null;
+    if (options.seed) {
+      try {
+        const rows = await parseCSV(options.seed);
+        const fileName = path.basename(options.seed, '.csv');
+        seedRoute = `/api/${fileName}`;
+        csvData = rows;
+        logger.info(`✦ Seeded GET ${seedRoute} with ${rows.length} records from ${fileName}.csv`);
+      } catch (err) {
+        logger.error('Failed to seed CSV: ' + err.message);
+        process.exit(1);
+      }
+    }
+
     // ── Register routes dynamically ──
     const endpoints = config.endpoints || {};
     const routeList = [];
@@ -126,6 +144,14 @@ const serve = new Command('serve')
         const parsed = new URL(url);
         routePath = parsed.pathname;
       } catch {}
+
+      // ── If this is the seeded CSV route, serve real data for GET ──
+      if (seedRoute && routePath === seedRoute && method === 'get') {
+        app.get(seedRoute, (req, res) => {
+          res.json({ success: true, data: csvData });
+        });
+        continue;   // skip the default mock handler
+      }
 
       const responseSchema = entry.response || {};
       const requestSchema = entry.request || {};
@@ -176,6 +202,7 @@ const serve = new Command('serve')
       if (delay > 0) logger.info(`Simulated delay: ${delay}ms`);
       logger.log('\nActive routes:');
       routeList.forEach(route => console.log(`  ${route}`));
+      if (seedRoute) console.log(`  GET ${seedRoute} (seeded from CSV)`);
       logger.hint('Use Ctrl+C to stop.');
     });
   });

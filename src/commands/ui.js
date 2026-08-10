@@ -212,10 +212,11 @@ function createApiServer(config) {
             validateStatus: () => true,
           });
           res.writeHead(proxyRes.status, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify(proxyRes.data));
+          // Return both status and data in a predictable structure
+          res.end(JSON.stringify({ status: proxyRes.status, data: proxyRes.data }));
         } catch (err) {
           res.writeHead(502, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ error: err.message }));
+          res.end(JSON.stringify({ error: err.message, status: 502 }));
         }
       }
 
