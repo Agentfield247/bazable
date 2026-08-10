@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+
 import { readFileSync } from 'fs';
 import { Command } from 'commander';
 import chalk from 'chalk';
@@ -32,6 +33,8 @@ import acceptCommand from '../src/commands/accept.js';
 import curlCommand from '../src/commands/curl.js';
 import lspCommand from '../src/commands/lsp.js';
 
+// Read the package version once – available everywhere
+const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf-8'));
 
 // -------------------------------------------------------------------
 // Branded banner
@@ -44,7 +47,6 @@ function showBanner() {
   console.log(chalk.hex('#FFB703').bold('  ▀▀▀▀▀▀▀  ▀▀▀▀▀▀▀  ▀▀▀▀▀▀▀  ▀▀▀▀▀▀▀  ▀▀▀▀▀▀▀  ▀▀▀▀▀▀▀'));
   console.log('');
   console.log(chalk.hex('#FF5A1F').bold('  Bazable CLI ') + chalk.hex('#FFB703')('»') + chalk.gray('  Git‑native API contract management'));
-  const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf-8'));
   console.log(chalk.gray(`  Version ${pkg.version}  |  https://bazable.opendeve.com`));
   console.log('');
 }
@@ -53,7 +55,8 @@ const program = new Command();
 
 program
   .name('bazable')
-  .description('Git-native API contract management');
+  .description('Git-native API contract management')
+  .version(pkg.version);
 
 program.addCommand(initCommand);
 program.addCommand(addCommand);
@@ -85,9 +88,8 @@ program.addCommand(acceptCommand);
 program.addCommand(curlCommand);
 program.addCommand(lspCommand);
 
-
 // Show banner only when no subcommand (except help/version)
-const args = process.argv.slice(2).filter(a => a !== '--help' && a !== '-h' && a !== '--version' && a !== '-V');
+const args = process.argv.slice(2).filter(a => a !== '--help' && a !== '-h');
 if (args.length === 0) {
   showBanner();
   console.log(chalk.gray('  Run ') + chalk.hex('#FF5A1F')('bazable --help') + chalk.gray(' to see all commands.\n'));
