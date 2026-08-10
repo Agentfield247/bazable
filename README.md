@@ -36,8 +36,10 @@ GitHub: https://github.com/Agentfield247/bazable
 
 Issues: https://github.com/Agentfield247/bazable/issues
 
+## Full Command Reference
+
 | Command | Aliases | Description |
-|--------|---------|-------------|
+|---------|---------|-------------|
 | `bazable init` | – | Create `bazable.config.json` |
 | `bazable add <url>` | – | Fetch live API and store response schema |
 | `bazable extract` | `ext`, `e` | Auto‑discover API calls from code (JS/TS/HTML + presets) |
@@ -49,7 +51,8 @@ Issues: https://github.com/Agentfield247/bazable/issues
 | `bazable types` | – | Generate TypeScript interfaces |
 | `bazable client` | – | Generate typed API client (`bazableClient.ts`) |
 | `bazable generate backend` | `gen` | Generate Express/Hono route stubs with validation |
-| `bazable gen ui` | – | Generate React + Tailwind form from an endpoint schema |
+| `bazable gen ui` | – | Generate a form component (vanilla HTML default, AI optional) |
+| `bazable gen context` | – | Generate AI agent context files (Cursor, Cline, MCP) |
 | `bazable ci` | – | Generate GitHub Actions workflow for CI enforcement |
 | `bazable hook` | – | Install pre‑push Git hook |
 | `bazable push` | – | Upload contract to Bazable Cloud |
