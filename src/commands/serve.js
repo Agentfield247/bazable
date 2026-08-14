@@ -5,6 +5,7 @@ import { faker } from '@faker-js/faker';
 import { readConfig, validateProjectContext } from '../utils/config.js';
 import { logger } from '../utils/logger.js';
 import { parseCSV } from '../utils/csv.js';   // NEW import
+import path from 'path';
 
 // -------------------------------------------------------------------
 // Smart data generator using @faker-js/faker
