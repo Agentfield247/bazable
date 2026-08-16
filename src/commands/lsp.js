@@ -15,6 +15,15 @@ import { resolveUrl } from '../utils/url.js';
 const lsp = new Command('lsp')
   .description('Start the Bazable Language Server Protocol engine')
   .action(() => {
+    // Force stdio mode if no connection mode was specified (allows manual testing)
+    if (
+      !process.argv.includes('--stdio') &&
+      !process.argv.includes('--node-ipc') &&
+      !process.argv.some(a => a.startsWith('--socket'))
+    ) {
+      process.argv.push('--stdio');
+    }
+
     const connection = createConnection(ProposedFeatures.all);
     const documents = new TextDocuments(TextDocument);
 

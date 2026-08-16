@@ -264,15 +264,40 @@ generate
     }
 
     const contractKey = `${method.toUpperCase()} ${url}`;
-    const entry = config.endpoints[contractKey] || config.endpoints[url];
+    // Look up both the method-prefixed and plain URL entries
+    const primaryEntry = config.endpoints[contractKey];
+    const fallbackEntry = config.endpoints[url];
+
+    // Choose the entry that has actual schema fields
+    let entry = primaryEntry;
+    if (primaryEntry && !hasSchemaFields(primaryEntry)) {
+      if (fallbackEntry && hasSchemaFields(fallbackEntry)) {
+        entry = fallbackEntry;
+      }
+    }
+
     if (!entry) {
       logger.error('Endpoint not found in contract.');
       process.exit(1);
     }
 
-    const allFields = { ...(entry.request || {}), ...(entry.response || {}) };
+    // Extract fields from direct fields or request/response objects
+    const metaKeys = new Set(['method', 'schema_status', 'csv_source', 'last_checked', 'request', 'response']);
+    const allFields = {};
+    for (const [key, value] of Object.entries(entry)) {
+      if (!metaKeys.has(key)) {
+        allFields[key] = value;
+      }
+    }
+    // If no direct fields, try request/response
     if (Object.keys(allFields).length === 0) {
-      logger.error('No request or response schema found.');
+      Object.assign(allFields, entry.request || {});
+      Object.assign(allFields, entry.response || {});
+    }
+
+    if (Object.keys(allFields).length === 0) {
+      logger.error('No request or response schema found on this endpoint.');
+      logger.hint('Available keys: ' + Object.keys(entry).join(', '));
       process.exit(1);
     }
 
@@ -296,5 +321,18 @@ generate
     await fs.writeFile(filePath, code, 'utf-8');
     logger.success(`Generated database model: ${filePath}`);
   });
+
+// Helper function to check if an entry has schema fields
+function hasSchemaFields(entry) {
+  if (!entry) return false;
+  const metaKeys = new Set(['method', 'schema_status', 'csv_source', 'last_checked', 'request', 'response']);
+  for (const [key, value] of Object.entries(entry)) {
+    if (!metaKeys.has(key)) return true;
+  }
+  // Also true if entry.request or entry.response has fields
+  if (entry.request && Object.keys(entry.request).length > 0) return true;
+  if (entry.response && Object.keys(entry.response).length > 0) return true;
+  return false;
+}
 
 export default generate;
