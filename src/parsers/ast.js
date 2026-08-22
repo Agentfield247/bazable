@@ -35,17 +35,19 @@ export function extractApiUrlsFromFile(fileContent, filePath, wrappers = ['fetch
 
   discoveredBaseUrl = isHtml ? null : detectBaseUrl(fileContent);
 
-  const recordOccurrence = (url, node) => {
+  // recordOccurrence now accepts a lineOffset (for HTML script blocks)
+  const recordOccurrence = (url, node, lineOffset = 0) => {
     allUrls.add(url);
     allOccurrences.push({
       url,
       file: filePath,
-      line: node?.loc?.start?.line || 0,
+      line: (node?.loc?.start?.line || 0) + lineOffset,
       column: node?.loc?.start?.column || 0,
     });
   };
 
-  const processBlock = (code) => {
+  // processBlock also accepts a lineOffset
+  const processBlock = (code, lineOffset = 0) => {
     const blockBase = detectBaseUrl(code);
     if (blockBase) {
       if (!discoveredBaseUrl) discoveredBaseUrl = blockBase;
@@ -68,11 +70,11 @@ export function extractApiUrlsFromFile(fileContent, filePath, wrappers = ['fetch
             if (args.length > 0) {
               const arg = args[0];
               if (arg.type === 'StringLiteral') {
-                recordOccurrence(arg.value, arg);
+                recordOccurrence(arg.value, arg, lineOffset);
               } else if (arg.type === 'TemplateLiteral' && arg.quasis.length > 0) {
                 const staticPart = arg.quasis[0].value.cooked || '';
                 if (staticPart) {
-                  recordOccurrence(staticPart, arg);
+                  recordOccurrence(staticPart, arg, lineOffset);
                   if (staticPart.startsWith('http')) {
                     if (!discoveredBaseUrl || staticPart.length < discoveredBaseUrl.length) {
                       discoveredBaseUrl = staticPart;
@@ -96,11 +98,11 @@ export function extractApiUrlsFromFile(fileContent, filePath, wrappers = ['fetch
               if (args.length > 0) {
                 const arg = args[0];
                 if (arg.type === 'StringLiteral') {
-                  recordOccurrence(arg.value, arg);
+                  recordOccurrence(arg.value, arg, lineOffset);
                 } else if (arg.type === 'TemplateLiteral' && arg.quasis.length > 0) {
                   const staticPart = arg.quasis[0].value.cooked || '';
                   if (staticPart) {
-                    recordOccurrence(staticPart, arg);
+                    recordOccurrence(staticPart, arg, lineOffset);
                     if (staticPart.startsWith('http')) {
                       if (!discoveredBaseUrl || staticPart.length < discoveredBaseUrl.length) {
                         discoveredBaseUrl = staticPart;
@@ -121,11 +123,11 @@ export function extractApiUrlsFromFile(fileContent, filePath, wrappers = ['fetch
           ) {
             const arg = args[0];
             if (arg.type === 'StringLiteral') {
-              recordOccurrence(arg.value, arg);
+              recordOccurrence(arg.value, arg, lineOffset);
             } else if (arg.type === 'TemplateLiteral' && arg.quasis.length > 0) {
               const staticPart = arg.quasis[0].value.cooked || '';
               if (staticPart) {
-                recordOccurrence(staticPart, arg);
+                recordOccurrence(staticPart, arg, lineOffset);
                 if (staticPart.startsWith('http')) {
                   if (!discoveredBaseUrl || staticPart.length < discoveredBaseUrl.length) {
                     discoveredBaseUrl = staticPart;
@@ -146,11 +148,11 @@ export function extractApiUrlsFromFile(fileContent, filePath, wrappers = ['fetch
             if (args.length > 0) {
               const arg = args[0];
               if (arg.type === 'StringLiteral') {
-                recordOccurrence(arg.value, arg);
+                recordOccurrence(arg.value, arg, lineOffset);
               } else if (arg.type === 'TemplateLiteral' && arg.quasis.length > 0) {
                 const staticPart = arg.quasis[0].value.cooked || '';
                 if (staticPart) {
-                  recordOccurrence(staticPart, arg);
+                  recordOccurrence(staticPart, arg, lineOffset);
                   if (staticPart.startsWith('http')) {
                     if (!discoveredBaseUrl || staticPart.length < discoveredBaseUrl.length) {
                       discoveredBaseUrl = staticPart;
@@ -176,11 +178,13 @@ export function extractApiUrlsFromFile(fileContent, filePath, wrappers = ['fetch
       const content = match[1];
       if (/src\s*=\s*["'][^"']+["']/i.test(tag) && content.trim().length === 0) continue;
       if (content.trim()) {
-        processBlock(content);
+        // Calculate line offset: number of newlines before the script block start
+        const lineOffset = fileContent.slice(0, match.index).split('\n').length - 1;
+        processBlock(content, lineOffset);
       }
     }
   } else {
-    processBlock(fileContent);
+    processBlock(fileContent, 0);
   }
 
   return {
@@ -450,15 +454,17 @@ export function inferRequestSchemasFromFile(fileContent, filePath, config, contr
     return 'low';
   };
 
+  // Move variable maps outside the block loop so they persist across script blocks
+  const variableSchemas = {};
+  const variableMeta = {};
+
   for (const block of blocks) {
     let ast;
     try {
       ast = babelParse(block, { sourceType: 'script', plugins: ['jsx', 'typescript'], errorRecovery: true });
     } catch { continue; }
 
-    // First pass: collect variable schemas
-    const variableSchemas = {};
-    const variableMeta = {};
+    // First pass: collect variable schemas (now merges into global maps)
     traverse(ast, {
       VariableDeclarator(path) {
         const { id, init } = path.node;

@@ -5,7 +5,9 @@ import { logger } from '../utils/logger.js';
 const review = new Command('review')
   .alias('rv')
   .description('Show provenance and inference details for the contract')
-  .action(async () => {
+  .option('--filter <pattern>', 'Filter endpoints by URL substring or regex')
+  .option('--json', 'Output results as JSON')
+  .action(async (options) => {
     await validateProjectContext();
 
     const config = await readConfig();
@@ -14,9 +16,41 @@ const review = new Command('review')
       process.exit(1);
     }
 
+    let endpoints = Object.entries(config.endpoints);
+
+    // Apply filter
+    if (options.filter) {
+      let regex;
+      try {
+        regex = new RegExp(options.filter, 'i');
+      } catch {
+        regex = null;
+      }
+      endpoints = endpoints.filter(([url]) => {
+        if (regex) return regex.test(url);
+        return url.toLowerCase().includes(options.filter.toLowerCase());
+      });
+    }
+
+    // JSON output
+    if (options.json) {
+      const output = {};
+      for (const [url, entry] of endpoints) {
+        output[url] = {
+          provenance: entry.provenance || [],
+          request: entry.request || null,
+          request_meta: entry.request_meta || {},
+          response: entry.response || null,
+        };
+      }
+      console.log(JSON.stringify(output, null, 2));
+      return;
+    }
+
+    // Human‑readable output
     console.log(logger.bold('\n🔍 Bazable Contract Review\n'));
 
-    for (const [url, entry] of Object.entries(config.endpoints)) {
+    for (const [url, entry] of endpoints) {
       console.log(logger.bold(`\n${url}`));
 
       // Provenance

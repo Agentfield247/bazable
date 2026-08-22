@@ -101,7 +101,7 @@ const extract = new Command('extract')
         // Store provenance on endpoint (merge with existing)
         for (const [fullUrl, locations] of Object.entries(provenanceByUrl)) {
           if (!config.endpoints[fullUrl]) {
-            config.endpoints[fullUrl] = { schema_status: 'unverified_extracted_manually', provenance: [] };
+            config.endpoints[fullUrl] = { schema_status: 'unverified', provenance: [] };
           }
           if (!config.endpoints[fullUrl].provenance) config.endpoints[fullUrl].provenance = [];
           for (const loc of locations) {
