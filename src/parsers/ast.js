@@ -29,22 +29,29 @@ function astTypeToSchemaType(node) {
 export function extractApiUrlsFromFile(fileContent, filePath, wrappers = ['fetchAPI']) {
   const isHtml = /\.html$/i.test(filePath) || /<\/?html/i.test(fileContent);
   const allUrls = new Set();
+  const allOccurrences = [];
   let discoveredBaseUrl = null;
   const allBaseUrls = [];
 
-  // For HTML we'll detect base URL per script block, so start with null here
   discoveredBaseUrl = isHtml ? null : detectBaseUrl(fileContent);
 
+  const recordOccurrence = (url, node) => {
+    allUrls.add(url);
+    allOccurrences.push({
+      url,
+      file: filePath,
+      line: node?.loc?.start?.line || 0,
+      column: node?.loc?.start?.column || 0,
+    });
+  };
+
   const processBlock = (code) => {
-    // Detect base URL inside this script block (for HTML)
     const blockBase = detectBaseUrl(code);
     if (blockBase) {
       if (!discoveredBaseUrl) discoveredBaseUrl = blockBase;
       if (!allBaseUrls.includes(blockBase)) allBaseUrls.push(blockBase);
     }
 
-    // Wrap both parsing and traversal in a single try/catch so that
-    // any block with duplicate declarations or syntax errors is skipped.
     try {
       const ast = babelParse(code, {
         sourceType: 'script',
@@ -56,16 +63,16 @@ export function extractApiUrlsFromFile(fileContent, filePath, wrappers = ['fetch
         CallExpression(nodePath) {
           const { callee, arguments: args } = nodePath.node;
 
-          // ── 1. fetch('…') or fetch(`…`) ──
+          // 1. fetch('…') or fetch(`…`)
           if (callee.type === 'Identifier' && callee.name === 'fetch') {
             if (args.length > 0) {
               const arg = args[0];
               if (arg.type === 'StringLiteral') {
-                allUrls.add(arg.value);
+                recordOccurrence(arg.value, arg);
               } else if (arg.type === 'TemplateLiteral' && arg.quasis.length > 0) {
                 const staticPart = arg.quasis[0].value.cooked || '';
                 if (staticPart) {
-                  allUrls.add(staticPart);
+                  recordOccurrence(staticPart, arg);
                   if (staticPart.startsWith('http')) {
                     if (!discoveredBaseUrl || staticPart.length < discoveredBaseUrl.length) {
                       discoveredBaseUrl = staticPart;
@@ -78,7 +85,7 @@ export function extractApiUrlsFromFile(fileContent, filePath, wrappers = ['fetch
             return;
           }
 
-          // ── 2. axios.method('…') or axios.method(`…`) ──
+          // 2. axios.method('…') or axios.method(`…`)
           if (callee.type === 'MemberExpression') {
             const { object, property } = callee;
             if (
@@ -89,11 +96,11 @@ export function extractApiUrlsFromFile(fileContent, filePath, wrappers = ['fetch
               if (args.length > 0) {
                 const arg = args[0];
                 if (arg.type === 'StringLiteral') {
-                  allUrls.add(arg.value);
+                  recordOccurrence(arg.value, arg);
                 } else if (arg.type === 'TemplateLiteral' && arg.quasis.length > 0) {
                   const staticPart = arg.quasis[0].value.cooked || '';
                   if (staticPart) {
-                    allUrls.add(staticPart);
+                    recordOccurrence(staticPart, arg);
                     if (staticPart.startsWith('http')) {
                       if (!discoveredBaseUrl || staticPart.length < discoveredBaseUrl.length) {
                         discoveredBaseUrl = staticPart;
@@ -106,7 +113,7 @@ export function extractApiUrlsFromFile(fileContent, filePath, wrappers = ['fetch
             }
           }
 
-          // ── 3. axios('…') or axios(`…`) ──
+          // 3. axios('…') or axios(`…`)
           if (
             callee.type === 'Identifier' &&
             callee.name === 'axios' &&
@@ -114,11 +121,11 @@ export function extractApiUrlsFromFile(fileContent, filePath, wrappers = ['fetch
           ) {
             const arg = args[0];
             if (arg.type === 'StringLiteral') {
-              allUrls.add(arg.value);
+              recordOccurrence(arg.value, arg);
             } else if (arg.type === 'TemplateLiteral' && arg.quasis.length > 0) {
               const staticPart = arg.quasis[0].value.cooked || '';
               if (staticPart) {
-                allUrls.add(staticPart);
+                recordOccurrence(staticPart, arg);
                 if (staticPart.startsWith('http')) {
                   if (!discoveredBaseUrl || staticPart.length < discoveredBaseUrl.length) {
                     discoveredBaseUrl = staticPart;
@@ -129,7 +136,7 @@ export function extractApiUrlsFromFile(fileContent, filePath, wrappers = ['fetch
             }
           }
 
-          // ── 4. Custom wrappers (e.g. fetchAPI, fetchLedgerAPI, apiClient) ──
+          // 4. Custom wrappers
           const customWrappers = wrappers;
           const funcName = callee.type === 'Identifier' ? callee.name : '';
           const isLikelyWrapper = funcName &&
@@ -139,11 +146,11 @@ export function extractApiUrlsFromFile(fileContent, filePath, wrappers = ['fetch
             if (args.length > 0) {
               const arg = args[0];
               if (arg.type === 'StringLiteral') {
-                allUrls.add(arg.value);
+                recordOccurrence(arg.value, arg);
               } else if (arg.type === 'TemplateLiteral' && arg.quasis.length > 0) {
                 const staticPart = arg.quasis[0].value.cooked || '';
                 if (staticPart) {
-                  allUrls.add(staticPart);
+                  recordOccurrence(staticPart, arg);
                   if (staticPart.startsWith('http')) {
                     if (!discoveredBaseUrl || staticPart.length < discoveredBaseUrl.length) {
                       discoveredBaseUrl = staticPart;
@@ -157,7 +164,7 @@ export function extractApiUrlsFromFile(fileContent, filePath, wrappers = ['fetch
         },
       });
     } catch (parseError) {
-      // Silently skip blocks that cause scope collisions or syntax errors
+      // ignore unparseable blocks
     }
   };
 
@@ -180,6 +187,7 @@ export function extractApiUrlsFromFile(fileContent, filePath, wrappers = ['fetch
     urls: Array.from(allUrls),
     baseUrl: discoveredBaseUrl,
     baseUrls: allBaseUrls,
+    occurrences: allOccurrences,
   };
 }
 
@@ -422,7 +430,7 @@ export function applyPayloadFixes(fileContent, filePath, config, contractedUrls)
 // Infer request schemas from payload literals (with variable resolution, fetch‑aware)
 // -------------------------------------------------------------------
 export function inferRequestSchemasFromFile(fileContent, filePath, config, contractedUrls) {
-  const schemas = {};
+  const result = {};
   const isHtml = /\.html$/i.test(filePath) || /<\/?html/i.test(fileContent);
   let blocks = [fileContent];
   if (isHtml) {
@@ -434,133 +442,166 @@ export function inferRequestSchemasFromFile(fileContent, filePath, config, contr
     }
   }
 
+  const confidenceFor = (node) => {
+    if (!node) return 'low';
+    if (node.type === 'StringLiteral' || node.type === 'NumericLiteral' || node.type === 'BooleanLiteral' || node.type === 'NullLiteral') return 'high';
+    if (node.type === 'Identifier') return 'medium'; // variable reference – we cannot be sure
+    if (node.type === 'ObjectExpression') return 'medium';
+    return 'low';
+  };
+
   for (const block of blocks) {
-    // Wrap the entire block processing so that any parse/traverse error
-    // (including duplicate declarations) simply skips the block.
+    let ast;
     try {
-      const ast = babelParse(block, { sourceType: 'script', plugins: ['jsx', 'typescript'], errorRecovery: true });
+      ast = babelParse(block, { sourceType: 'script', plugins: ['jsx', 'typescript'], errorRecovery: true });
+    } catch { continue; }
 
-      // ── FIRST PASS : collect variable → object‑literal schemas ──
-      const variableSchemas = {};
-      traverse(ast, {
-        VariableDeclarator(path) {
-          const { id, init } = path.node;
-          if (!id || !init) return;
-          if (id.type !== 'Identifier') return;
-          const varName = id.name;
+    // First pass: collect variable schemas
+    const variableSchemas = {};
+    const variableMeta = {};
+    traverse(ast, {
+      VariableDeclarator(path) {
+        const { id, init } = path.node;
+        if (!id || !init) return;
+        if (id.type !== 'Identifier') return;
+        const varName = id.name;
 
-          const extractFromObj = (objNode) => {
-            const schema = {};
-            objNode.properties.forEach(prop => {
-              if (prop.type === 'ObjectProperty' || prop.type === 'Property') {
-                const key = prop.key.name || prop.key.value;
-                schema[key] = astTypeToSchemaType(prop.value) || 'any';
+        const extractFromObj = (objNode) => {
+          const schema = {};
+          const meta = {};
+          objNode.properties.forEach(prop => {
+            if (prop.type === 'ObjectProperty' || prop.type === 'Property') {
+              const key = prop.key.name || prop.key.value;
+              const valueNode = prop.value;
+              const type = astTypeToSchemaType(valueNode) || 'any';
+              schema[key] = type;
+              meta[key] = {
+                inferred: true,
+                confidence: confidenceFor(valueNode),
+                source_value: valueNode.type === 'StringLiteral' || valueNode.type === 'NumericLiteral' || valueNode.type === 'BooleanLiteral'
+                  ? valueNode.value
+                  : null,
+                source_type: valueNode.type,
+              };
+            }
+          });
+          if (Object.keys(schema).length > 0) {
+            variableSchemas[varName] = schema;
+            variableMeta[varName] = meta;
+          }
+        };
+
+        if (init.type === 'ObjectExpression') {
+          extractFromObj(init);
+        } else if (init.type === 'CallExpression' &&
+                   init.callee?.type === 'MemberExpression' &&
+                   init.callee.object?.name === 'JSON' &&
+                   init.callee.property?.name === 'stringify' &&
+                   init.arguments?.length > 0 &&
+                   init.arguments[0].type === 'ObjectExpression') {
+          extractFromObj(init.arguments[0]);
+        }
+      }
+    });
+
+    // Second pass: find API calls and resolve payloads
+    traverse(ast, {
+      CallExpression(nodePath) {
+        const { callee, arguments: args } = nodePath.node;
+        let urlValue = null;
+        let payloadNode = null;
+
+        const funcName = callee.type === 'Identifier' ? callee.name : '';
+        const isWrapper = funcName && (
+          funcName === 'fetch' || funcName === 'fetchAPI' || funcName === 'axios' ||
+          funcName.toLowerCase().includes('fetch') || funcName.toLowerCase().includes('api')
+        );
+
+        if (!(callee.type === 'Identifier' && isWrapper)) return;
+
+        if (args[0]?.type === 'StringLiteral') urlValue = args[0].value;
+        else if (args[0]?.type === 'TemplateLiteral' && args[0].quasis.length > 0) urlValue = args[0].quasis[0].value.cooked || '';
+        if (!urlValue) return;
+
+        const secondArg = args[1];
+        if (!secondArg) return;
+
+        if (funcName === 'fetch') {
+          if (secondArg.type === 'ObjectExpression') {
+            const bodyProp = secondArg.properties.find(p => p.key.name === 'body');
+            if (bodyProp) {
+              let bodyNode = bodyProp.value;
+              if (bodyNode.type === 'CallExpression' &&
+                  bodyNode.callee?.type === 'MemberExpression' &&
+                  bodyNode.callee.object?.name === 'JSON' &&
+                  bodyNode.callee.property?.name === 'stringify' &&
+                  bodyNode.arguments?.length > 0) {
+                bodyNode = bodyNode.arguments[0];
               }
-            });
-            if (Object.keys(schema).length > 0) variableSchemas[varName] = schema;
-          };
+              payloadNode = bodyNode;
+            }
+          }
+        } else if (funcName === 'axios') {
+          if (secondArg.type === 'ObjectExpression') {
+            const dataProp = secondArg.properties.find(p => p.key.name === 'data');
+            payloadNode = dataProp ? dataProp.value : secondArg;
+          } else payloadNode = secondArg;
+        } else {
+          payloadNode = secondArg;
+        }
 
-          if (init.type === 'ObjectExpression') {
-            extractFromObj(init);
-          } else if (init.type === 'CallExpression' &&
-                     init.callee?.type === 'MemberExpression' &&
-                     init.callee.object?.name === 'JSON' &&
-                     init.callee.property?.name === 'stringify' &&
-                     init.arguments?.length > 0 &&
-                     init.arguments[0].type === 'ObjectExpression') {
-            extractFromObj(init.arguments[0]);
+        // Unwrap JSON.stringify for non-fetch wrappers if present
+        if (payloadNode?.type === 'CallExpression' &&
+            payloadNode.callee?.type === 'MemberExpression' &&
+            payloadNode.callee.object?.name === 'JSON' &&
+            payloadNode.callee.property?.name === 'stringify' &&
+            payloadNode.arguments?.length > 0) {
+          payloadNode = payloadNode.arguments[0];
+        }
+
+        if (!payloadNode) return;
+
+        const resolvedUrl = resolveUrl(urlValue, config.baseUrl || '');
+        if (result[resolvedUrl]) return; // already captured this endpoint
+
+        // If payload is an identifier, use variable schemas/meta
+        if (payloadNode.type === 'Identifier') {
+          const varName = payloadNode.name;
+          if (variableSchemas[varName]) {
+            result[resolvedUrl] = {
+              schema: variableSchemas[varName],
+              meta: variableMeta[varName] || {},
+            };
+          }
+          return;
+        }
+
+        if (payloadNode.type === 'ObjectExpression') {
+          const schema = {};
+          const meta = {};
+          payloadNode.properties.forEach(prop => {
+            if (prop.type === 'ObjectProperty' || prop.type === 'Property') {
+              const key = prop.key.name || prop.key.value;
+              const valueNode = prop.value;
+              const type = astTypeToSchemaType(valueNode) || 'any';
+              schema[key] = type;
+              meta[key] = {
+                inferred: true,
+                confidence: confidenceFor(valueNode),
+                source_value: valueNode.type === 'StringLiteral' || valueNode.type === 'NumericLiteral' || valueNode.type === 'BooleanLiteral'
+                  ? valueNode.value
+                  : null,
+                source_type: valueNode.type,
+              };
+            }
+          });
+          if (Object.keys(schema).length > 0) {
+            result[resolvedUrl] = { schema, meta };
           }
         }
-      });
-
-      // ── SECOND PASS : API calls → resolve payloads ──
-      traverse(ast, {
-        CallExpression(nodePath) {
-          const { callee, arguments: args } = nodePath.node;
-          let urlValue = null;
-          let finalSchema = null;
-
-          const funcName = callee.type === 'Identifier' ? callee.name : '';
-          const isWrapper = funcName && (
-            funcName === 'fetch' || funcName === 'fetchAPI' || funcName === 'axios' ||
-            funcName.toLowerCase().includes('fetch') || funcName.toLowerCase().includes('api')
-          );
-
-          if (!(callee.type === 'Identifier' && isWrapper)) return;
-
-          if (args[0]?.type === 'StringLiteral') {
-            urlValue = args[0].value;
-          } else if (args[0]?.type === 'TemplateLiteral' && args[0].quasis.length > 0) {
-            urlValue = args[0].quasis[0].value.cooked || '';
-          }
-          if (!urlValue) return;
-
-          const secondArg = args[1];
-          if (!secondArg) return;
-
-          const getSchemaFromNode = (node) => {
-            if (!node) return null;
-            if (node.type === 'ObjectExpression') {
-              const schema = {};
-              node.properties.forEach(prop => {
-                if (prop.type === 'ObjectProperty' || prop.type === 'Property') {
-                  const key = prop.key.name || prop.key.value;
-                  schema[key] = astTypeToSchemaType(prop.value) || 'any';
-                }
-              });
-              return Object.keys(schema).length > 0 ? schema : null;
-            }
-            if (node.type === 'Identifier' && variableSchemas[node.name]) {
-              return variableSchemas[node.name];
-            }
-            return null;
-          };
-
-          if (funcName === 'fetch') {
-            if (secondArg.type === 'ObjectExpression') {
-              const bodyProp = secondArg.properties.find(p => p.key.name === 'body');
-              if (bodyProp) {
-                let bodyNode = bodyProp.value;
-                if (bodyNode.type === 'CallExpression' &&
-                    bodyNode.callee?.type === 'MemberExpression' &&
-                    bodyNode.callee.object?.name === 'JSON' &&
-                    bodyNode.callee.property?.name === 'stringify' &&
-                    bodyNode.arguments?.length > 0) {
-                  bodyNode = bodyNode.arguments[0];
-                }
-                finalSchema = getSchemaFromNode(bodyNode);
-              }
-            }
-          } else if (funcName === 'axios') {
-            if (secondArg.type === 'ObjectExpression') {
-              const dataProp = secondArg.properties.find(p => p.key.name === 'data');
-              finalSchema = getSchemaFromNode(dataProp ? dataProp.value : secondArg);
-            } else {
-              finalSchema = getSchemaFromNode(secondArg);
-            }
-          } else {
-            if (secondArg.type === 'ObjectExpression') {
-              finalSchema = getSchemaFromNode(secondArg);
-            } else if (secondArg.type === 'Identifier' && variableSchemas[secondArg.name]) {
-              finalSchema = variableSchemas[secondArg.name];
-            } else if (secondArg.type === 'CallExpression' &&
-                       secondArg.callee?.type === 'MemberExpression' &&
-                       secondArg.callee.object?.name === 'JSON' &&
-                       secondArg.callee.property?.name === 'stringify' &&
-                       secondArg.arguments?.length > 0) {
-              finalSchema = getSchemaFromNode(secondArg.arguments[0]);
-            }
-          }
-
-          if (finalSchema) {
-            const resolvedUrl = resolveUrl(urlValue, config.baseUrl || '');
-            schemas[resolvedUrl] = finalSchema;
-          }
-        }
-      });
-    } catch (parseError) {
-      // Silently skip blocks that cause scope collisions or syntax errors
-    }
+      }
+    });
   }
-  return schemas;
+
+  return result;
 }

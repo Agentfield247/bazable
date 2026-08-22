@@ -32,6 +32,7 @@ import proposeCommand from '../src/commands/propose.js';
 import acceptCommand from '../src/commands/accept.js';
 import curlCommand from '../src/commands/curl.js';
 import lspCommand from '../src/commands/lsp.js';
+import reviewCommand from '../src/commands/review.js';
 
 // Read the package version once – available everywhere
 const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf-8'));
@@ -87,6 +88,7 @@ program.addCommand(proposeCommand);
 program.addCommand(acceptCommand);
 program.addCommand(curlCommand);
 program.addCommand(lspCommand);
+program.addCommand(reviewCommand);
 
 // Show banner only when no subcommand (except help/version)
 const args = process.argv.slice(2).filter(a => a !== '--help' && a !== '-h');

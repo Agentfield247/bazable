@@ -86,14 +86,44 @@ const extract = new Command('extract')
           extractedUrls.add(fullUrl);
         }
 
+        // Collect provenance (occurrences) for this file
+        const provenanceByUrl = {};
+        for (const occ of result.occurrences || []) {
+          const fullUrl = resolveUrl(occ.url, globalBaseUrl);
+          if (!provenanceByUrl[fullUrl]) provenanceByUrl[fullUrl] = [];
+          provenanceByUrl[fullUrl].push({
+            file: occ.file,
+            line: occ.line,
+            column: occ.column,
+          });
+        }
+
+        // Store provenance on endpoint (merge with existing)
+        for (const [fullUrl, locations] of Object.entries(provenanceByUrl)) {
+          if (!config.endpoints[fullUrl]) {
+            config.endpoints[fullUrl] = { schema_status: 'unverified_extracted_manually', provenance: [] };
+          }
+          if (!config.endpoints[fullUrl].provenance) config.endpoints[fullUrl].provenance = [];
+          for (const loc of locations) {
+            // avoid duplicates
+            const exists = config.endpoints[fullUrl].provenance.some(
+              p => p.file === loc.file && p.line === loc.line && p.column === loc.column
+            );
+            if (!exists) config.endpoints[fullUrl].provenance.push(loc);
+          }
+        }
+
+        // Infer request schemas + metadata if requested
         if (options.inferRequests) {
           const existingUrls = Object.keys(config.endpoints || {});
           const requestInfos = inferRequestSchemasFromFile(content, filePath, config, existingUrls);
-          for (const [fullUrl, schema] of Object.entries(requestInfos)) {
+          for (const [fullUrl, info] of Object.entries(requestInfos)) {
             if (!config.endpoints[fullUrl]) config.endpoints[fullUrl] = {};
-            config.endpoints[fullUrl].request = schema;
+            config.endpoints[fullUrl].request = info.schema;
+            config.endpoints[fullUrl].request_meta = info.meta;
           }
         }
+
         continue;
       }
     }
