@@ -5,7 +5,6 @@ import { logError as saveError } from './errorLogger.js';
 class Logger {
   constructor() {
     this.spinner = null;
-
   }
 
   startSpinner(msg) {
@@ -62,7 +61,14 @@ class Logger {
   bold(msg) {
     return chalk.bold(msg);
   }
-}
 
+  /**
+   * Output a JSON object with pretty printing.
+   * Useful for machine‑readable command outputs.
+   */
+  json(obj) {
+    console.log(JSON.stringify(obj, null, 2));
+  }
+}
 
 export const logger = new Logger();
